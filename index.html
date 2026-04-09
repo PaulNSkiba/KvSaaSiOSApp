@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Прототип Водителя Контейнеров</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
+
+<style>
+html, body {
+  margin:0; padding:0; height:100%;
+  font-family:sans-serif;
+  overflow:hidden;
+}
+
+#kvsaas__cms-app {
+  display:flex;
+  height:100%;
+  flex-direction:row;
+}
+
+#kvsaas__cms-map-container {
+  flex:1;
+  position:relative;
+}
+
+#kvsaas__cms-map {
+  width:100%;
+  height:100%;
+}
+
+/* Фильтры */
+#kvsaas__cms-filter-panel {
+  position:absolute;
+  top:10px;
+  left:80px;
+  background:#e9ecef;
+  padding:6px;
+  border-radius:6px;
+  display:flex;
+  gap:6px;
+  z-index:1000;
+}
+
+#kvsaas__cms-filter-panel input,
+#kvsaas__cms-filter-panel select,
+#kvsaas__cms-filter-panel button {
+  padding:4px;
+  font-size:14px;
+}
+
+/* Чекбокс пошагового маршрута */
+#kvsaas__cms-showSteps-wrapper {
+  position:absolute;
+  top:60px;
+  left:80px;
+  z-index:1000;
+  background:#e9ecef;
+  padding:4px 8px;
+  border-radius:6px;
+  font-size:14px;
+}
+
+/* Сайдбар */
+#kvsaas__cms-sidebar {
+  width:360px;
+  max-width:100%;
+  background:#f4f4f4;
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+
+#kvsaas__cms-toggle-sidebar {
+  padding:6px;
+  cursor:pointer;
+  background:#6c757d;
+  color:white;
+  border:none;
+  border-radius:6px;
+  margin:6px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+/* Список */
+#kvsaas__cms-container-list {
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  padding:8px;
+}
+
+.kvsaas__cms-container-item {
+  padding:4px 6px;
+  margin-bottom:4px;
+  background:white;
+  border-radius:6px;
+  border:1px solid #ccc;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  cursor:pointer;
+  font-size:14px;
+}
+
+.kvsaas__cms-list-active {
+  background:#ffe6f2;
+}
+
+.kvsaas__cms-disabled {
+  opacity:0.5;
+  pointer-events:none;
+}
+
+/* Карточки */
+#kvsaas__cms-container-card {
+  padding:8px;
+}
+
+#kvsaas__cms-active-card {
+  padding:0 8px 8px 8px;
+}
+
+.kvsaas__cms-card {
+  border:1px solid #ccc;
+  border-radius:8px;
+  background:#fff;
+  padding:8px;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  line-height:1.2em;
+  width:100%;
+  position:relative;
+}
+
+.kvsaas__cms-card-active {
+  background:#ffe0ef !important;
+  border:2px solid #cc6699 !important;
+}
+
+.kvsaas__cms-card h3 {
+  margin:0;
+  font-size:1.2em;
+}
+
+.kvsaas__cms-card p {
+  margin:2px 0;
+  font-size:14px;
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+
+/* Тег расстояния */
+.kvsaas__cms-distance-tag {
+  position:absolute;
+  top:8px;
+  right:8px;
+  background:#f1f1f1;
+  border:1px solid #ccc;
+  padding:3px 8px;
+  border-radius:6px;
+  font-size:13px;
+  color:#333;
+  white-space:nowrap;
+}
+
+/* Кнопки */
+.kvsaas__cms-button-group {
+  display:flex;
+  gap:4px;
+  margin-top:6px;
+}
+
+.kvsaas__cms-card button {
+  border:none;
+  border-radius:6px;
+  padding:8px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:16px;
+  flex:1;
+}
+
+.kvsaas__cms-take { background:#28a745; color:white; }
+.kvsaas__cms-return { background:#007bff; color:white; }
+.kvsaas__cms-route { background:#ffc107; color:#212529; }
+.kvsaas__cms-scan { background:#17a2b8; color:white; position:relative; overflow:visible; }
+
+/* Скан-меню */
+.kvsaas__cms-scan-menu {
+  display:none;
+  position:absolute;
+  bottom:110%;
+  left:0;
+  background:white;
+  border:1px solid #ccc;
+  border-radius:6px;
+  flex-direction:column;
+  min-width:100px;
+  z-index:9999;
+}
+
+.kvsaas__cms-scan-menu div {
+  padding:4px 8px;
+  cursor:pointer;
+  font-size:14px;
+  color:black;
+}
+
+.kvsaas__cms-scan-menu div:hover {
+  background:#f1f1f1;
+}
+
+.kvsaas__cms-scan:hover .kvsaas__cms-scan-menu {
+  display:flex;
+}
+
+/* Маркеры */
+.kvsaas__cms-custom-marker {
+  display:flex;
+  align-items:center;
+}
+
+.kvsaas__cms-marker-circle {
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  border:2px solid;
+  flex-shrink:0;
+}
+
+.kvsaas__cms-marker-number-blue,
+.kvsaas__cms-marker-number-orange {
+  padding:2px 6px;
+  border-radius:4px;
+  font-weight:bold;
+  font-size:14px;
+  margin-left:6px;
+  cursor:pointer;
+  white-space:nowrap;
+  border:1px solid;
+  background:var(--bg);
+  color:var(--fg);
+  border-color:var(--fg);
+}
+
+.kvsaas__cms-marker-number-blue {
+  --bg:#d9eaff;
+  --fg:#003366;
+}
+
+.kvsaas__cms-marker-number-orange {
+  --bg:#ffe2cc;
+  --fg:#8a3f00;
+}
+
+.kvsaas__cms-tooltip-viewed {
+  background:var(--fg) !important;
+  color:var(--bg) !important;
+  border-color:var(--fg) !important;
+}
+
+.kvsaas__cms-tooltip-active {
+  background:#ffb3d9 !important;
+  color:#660033 !important;
+  border-color:#cc6699 !important;
+}
+
+/* ТО */
+.kvsaas__cms-to-icon {
+  width:0;
+  height:0;
+  border-left:10px solid transparent;
+  border-right:10px solid transparent;
+  border-bottom:18px solid #007bff;
+}
+
+/* Пин "Я здесь" */
+.kvsaas__cms-driver-pin {
+  position:relative;
+  width:40px;
+  height:40px;
+}
+
+.kvsaas__cms-driver-pin-label {
+  position:absolute;
+  top:-28px;
+  left:50%;
+  transform:translateX(-50%);
+  background:#007bff;
+  color:white;
+  padding:2px 6px;
+  border-radius:4px;
+  font-size:12px;
+
+  /* 🔥 Исправление: фиксированная ширина + запрет переноса */
+  width:60px;
+  text-align:center;
+  white-space:nowrap;
+}
+</style>
+</head>
+
+<body>
+<div id="kvsaas__cms-app">
+
+  <div id="kvsaas__cms-map-container">
+    <div id="kvsaas__cms-map"></div>
+
+    <div id="kvsaas__cms-filter-panel">
+      <input type="number" id="kvsaas__cms-search" placeholder="№ контейнера">
+      <select id="kvsaas__cms-typeFilter">
+        <option value="all">Все типы</option>
+        <option value="обычный">Обычный</option>
+        <option value="строительный">Строительный</option>
+      </select>
+      <select id="kvsaas__cms-specialFilter">
+        <option value="all">Все спец</option>
+        <option value="ТО требуется">ТО требуется</option>
+      </select>
+      <button id="kvsaas__cms-applyFilter">Применить</button>
+    </div>
+
+    <label id="kvsaas__cms-showSteps-wrapper">
+      <input type="checkbox" id="kvsaas__cms-showSteps"> Пошаговый маршрут
+    </label>
+
+    <button id="kvsaas__cms-atWarehouse"
+      style="position:absolute; top:10px; right:10px; z-index:1000; padding:8px 12px; border:none; border-radius:6px; background:#007bff; color:white; cursor:pointer;">
+      Я на складе
+    </button>
+  </div>
+
+  <div id="kvsaas__cms-sidebar">
+
+    <button id="kvsaas__cms-toggle-sidebar">
+      Список контейнеров <span id="kvsaas__cms-counter">0</span>
+    </button>
+
+    <div id="kvsaas__cms-container-list"></div>
+
+    <div id="kvsaas__cms-container-card"></div>
+
+    <div id="kvsaas__cms-active-card"></div>
+
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
+<script>
+/* ---------------- ДАННЫЕ ---------------- */
+
+const baseLat = 51.499, baseLng = 6.750;
+const driverPos = [baseLat, baseLng];
+
+const containers = [];
+const types = ["обычный","строительный"];
+const specials = [null,"ТО требуется"];
+
+for(let i=1;i<=10;i++){
+  containers.push({
+    id:i,
+    number:Math.floor(1000+Math.random()*9000),
+    lat:baseLat + Math.random()*0.01,
+    lng:baseLng + Math.random()*0.01,
+    type:types[Math.floor(Math.random()*types.length)],
+    special:specials[Math.floor(Math.random()*specials.length)],
+    description:`Контейнер №${i} в районе Рикленхауз`
+  });
+}
+
+/* ---------------- КАРТА ---------------- */
+
+const map = L.map('kvsaas__cms-map').setView(driverPos,15);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'&copy; OpenStreetMap'
+}).addTo(map);
+
+/* Пин "Я здесь" */
+L.marker(driverPos,{
+  icon:L.divIcon({
+    className:"",
+    html:`
+      <div class="kvsaas__cms-driver-pin">
+        <div class="kvsaas__cms-driver-pin-label">Я здесь</div>
+        <svg viewBox="0 0 24 24">
+          <path fill="#007bff" d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/>
+          <circle cx="12" cy="9" r="3" fill="white"/>
+        </svg>
+      </div>
+    `,
+    iconSize:[40,40],
+    iconAnchor:[20,40]
+  })
+}).addTo(map);
+
+/* ---------------- СОСТОЯНИЕ ---------------- */
+
+let markers = {};
+let routing = null; // видимый маршрут
+let activeId = null;
+let viewedId = null;
+
+const routeInfo = {}; // id -> {distance, time}
+
+/* ---------------- УТИЛИТЫ ---------------- */
+
+function colorByType(t){
+  return t==="обычный" ? "#007bff" : "#fd7e14";
+}
+
+function darken(hex){
+  let n=parseInt(hex.slice(1),16);
+  let r=(n>>16)-30; if(r<0)r=0;
+  let g=((n>>8)&255)-30; if(g<0)g=0;
+  let b=(n&255)-30; if(b<0)b=0;
+  return `rgb(${r},${g},${b})`;
+}
+
+function distance(aLat, aLng, bLat, bLng) {
+  return Math.sqrt((aLat - bLat)**2 + (aLng - bLng)**2);
+}
+
+function sortByDistance(arr) {
+  return arr.slice().sort((a, b) => {
+    const da = distance(driverPos[0], driverPos[1], a.lat, a.lng);
+    const db = distance(driverPos[0], driverPos[1], b.lat, b.lng);
+    return da - db;
+  });
+}
+
+/* ---------------- НЕЯВНЫЙ РАСЧЁТ МАРШРУТА (H1) ---------------- */
+
+function calculateRouteSilently(id) {
+  const c = containers.find(x=>x.id===id);
+  if (!c) return;
+
+  const silent = L.Routing.control({
+    waypoints:[
+      L.latLng(driverPos),
+      L.latLng(c.lat,c.lng)
+    ],
+    addWaypoints:false,
+    draggableWaypoints:false,
+    fitSelectedRoutes:false,
+    show:false,
+    routeWhileDragging:false,
+    createMarker: () => null
+  });
+
+  silent.on('routesfound', e => {
+    const r = e.routes[0].summary;
+    routeInfo[id] = {
+      distance: r.totalDistance,
+      time: r.totalTime
+    };
+    renderCards();
+    silent.remove();
+  });
+
+  silent.addTo(map);
+}
+
+/* ---------------- РЕНДЕР СПИСКА ---------------- */
+
+const listEl = document.getElementById('kvsaas__cms-container-list');
+const viewedCardEl = document.getElementById('kvsaas__cms-container-card');
+const activeCardEl = document.getElementById('kvsaas__cms-active-card');
+const counterEl = document.getElementById('kvsaas__cms-counter');
+
+function renderList(arr){
+  listEl.innerHTML='';
+  arr.forEach(c=>{
+    const div=document.createElement('div');
+    div.className='kvsaas__cms-container-item';
+    if (c.id === activeId) div.classList.add('kvsaas__cms-list-active');
+    div.id='item-'+c.id;
+
+    div.innerHTML=`
+      <div style="display:flex; align-items:center; gap:4px;">
+        <div style="width:20px; font-weight:bold;">${c.id}</div>
+        <div class="kvsaas__cms-marker-circle"
+             style="background:${colorByType(c.type)};
+                    border-color:${darken(colorByType(c.type))};"></div>
+        <div style="font-weight:bold;">${c.number}</div>
+        ${c.special ? '<div class="kvsaas__cms-to-icon"></div>' : ''}
+      </div>
+    `;
+
+    div.onclick = ()=> selectContainer(c.id);
+    listEl.appendChild(div);
+  });
+
+  counterEl.textContent = arr.length;
+  renderMarkers(arr);
+}
+
+/* ---------------- РЕНДЕР МАРКЕРОВ ---------------- */
+
+function renderMarkers(arr){
+  Object.values(markers).forEach(m=>map.removeLayer(m));
+  markers={};
+
+  arr.forEach(c=>{
+    const isViewed = (viewedId===c.id);
+    const isActive = (activeId===c.id);
+
+    const tooltipClass = c.type==="обычный"
+      ? "kvsaas__cms-marker-number-blue"
+      : "kvsaas__cms-marker-number-orange";
+
+    const stateClass =
+      isActive ? "kvsaas__cms-tooltip-active" :
+      isViewed ? "kvsaas__cms-tooltip-viewed" : "";
+
+    const html = `
+      <div class="kvsaas__cms-custom-marker">
+        <div class="kvsaas__cms-marker-circle"
+             style="background:${colorByType(c.type)};
+                    border-color:${darken(colorByType(c.type))};"></div>
+
+        <div class="${tooltipClass} ${stateClass}"
+             data-id="${c.id}">
+          ${c.number}
+        </div>
+
+        ${c.special ? '<div class="kvsaas__cms-to-icon"></div>' : ''}
+      </div>
+    `;
+
+    const icon = L.divIcon({
+      html,
+      className:'',
+      iconSize:[30,30],
+      iconAnchor:[8,8]
+    });
+
+    const marker = L.marker([c.lat,c.lng],{icon}).addTo(map);
+
+    marker.getElement()
+      .querySelector('[data-id]')
+      .addEventListener('click',()=> selectContainer(c.id));
+
+    markers[c.id]=marker;
+  });
+}
+
+/* ---------------- ВЫБОР КОНТЕЙНЕРА ---------------- */
+
+function selectContainer(id){
+  if (activeId === id) {
+    viewedId = null;
+  } else {
+    viewedId = id;
+  }
+
+  if (viewedId === activeId) viewedId = null;
+
+  calculateRouteSilently(id);
+
+  renderCards();
+  renderList(sortByDistance(containers));
+}
+
+/* ---------------- РЕНДЕР КАРТОЧЕК ---------------- */
+
+function renderCards(){
+  viewedCardEl.innerHTML='';
+  activeCardEl.innerHTML='';
+
+  if (viewedId === activeId) viewedId = null;
+
+  if(viewedId){
+    const c = containers.find(x=>x.id===viewedId);
+    if (c) viewedCardEl.appendChild(renderCard(c, false));
+  }
+
+  if(activeId){
+    const c = containers.find(x=>x.id===activeId);
+    if (c) activeCardEl.appendChild(renderCard(c, true));
+  }
+}
+
+/* ---------------- КАРТОЧКА ---------------- */
+
+function renderCard(c,isActive){
+  const div=document.createElement('div');
+  div.className='kvsaas__cms-card ' + (isActive?'kvsaas__cms-card-active':'');
+
+  const activeBadge = isActive
+    ? '<span style="background:#cc6699;color:white;padding:2px 6px;border-radius:4px;font-size:12px;">В работе</span>'
+    : '';
+
+  const special = c.special ? `<div class="kvsaas__cms-to-icon"></div>` : '';
+
+  let distanceTag = '';
+  if (routeInfo[c.id]) {
+    const km = (routeInfo[c.id].distance / 1000).toFixed(1);
+    const mins = Math.round(routeInfo[c.id].time / 60);
+    distanceTag = `<div class="kvsaas__cms-distance-tag">${km} км (${mins} мин)</div>`;
+  }
+
+  div.innerHTML=`
+    ${distanceTag}
+    <h3>Контейнер №${c.number} ${activeBadge}</h3>
+    <p>${special} ${c.description}</p>
+
+    <div class="kvsaas__cms-button-group">
+
+      ${isActive
+        ? `<button class="kvsaas__cms-return" onclick="removeFromWork(${c.id})" title="Вернуть из работы">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+               <path d="M5 12h10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+               <path d="M9 8l-4 4 4 4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+             </svg>
+           </button>`
+        : `<button class="kvsaas__cms-take" onclick="takeToWork(${c.id})" title="Взять в работу">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+               <path d="M5 13l4 4 10-10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+             </svg>
+           </button>`
+      }
+
+      <button class="kvsaas__cms-route" onclick="routeTo(${c.id})" title="Показать маршрут">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2l7 19-7-4-7 4z" stroke="black" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <button class="kvsaas__cms-scan" title="Сканировать">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <rect x="4" y="4" width="16" height="16" rx="3" stroke="white" stroke-width="2"/>
+          <path d="M4 10h16M4 14h16" stroke="white" stroke-width="2"/>
+        </svg>
+
+        <div class="kvsaas__cms-scan-menu">
+          <div onclick="alert('NFC ${c.id}')">NFC</div>
+          <div onclick="alert('OCR ${c.id}')">OCR</div>
+          <div onclick="alert('QR ${c.id}')">QR</div>
+        </div>
+      </button>
+
+    </div>
+  `;
+
+  return div;
+}
+
+/* ---------------- ВЗЯТЬ / ВЕРНУТЬ В РАБОТУ ---------------- */
+
+function takeToWork(id){
+  activeId = id;
+
+  calculateRouteSilently(id);
+
+  document.querySelectorAll('.kvsaas__cms-container-item').forEach(el=>{
+    if(!el.id.endsWith(id)) el.classList.add('kvsaas__cms-disabled');
+  });
+
+  renderCards();
+  renderList(sortByDistance(containers));
+}
+
+function removeFromWork(id){
+  activeId = null;
+
+  document.querySelectorAll('.kvsaas__cms-container-item')
+    .forEach(el=>el.classList.remove('kvsaas__cms-disabled'));
+
+  renderCards();
+  renderList(sortByDistance(containers));
+}
+
+/* ---------------- ЯВНЫЙ МАРШРУТ ---------------- */
+
+function routeTo(id){
+  const c = containers.find(x=>x.id===id);
+  if(!c) return;
+
+  const showSteps = document.getElementById('kvsaas__cms-showSteps').checked;
+
+  if(routing){
+    map.removeControl(routing);
+    routing = null;
+  }
+
+  routing = L.Routing.control({
+    waypoints:[
+      L.latLng(driverPos),
+      L.latLng(c.lat,c.lng)
+    ],
+    routeWhileDragging:false,
+    show: showSteps,
+    collapsible: true,
+    lineOptions:{ styles:[{color:colorByType(c.type), weight:6}] }
+  }).addTo(map);
+
+  routing.on('routesfound', function(e) {
+    const r = e.routes[0].summary;
+    routeInfo[id] = {
+      distance: r.totalDistance,
+      time: r.totalTime
+    };
+    renderCards();
+  });
+
+  setTimeout(() => applyStepsVisibility(), 150);
+}
+
+/* ---------------- ФИЛЬТР ---------------- */
+
+document.getElementById('kvsaas__cms-applyFilter').onclick = ()=>{
+  const searchVal = parseInt(document.getElementById('kvsaas__cms-search').value) || null;
+  const typeVal = document.getElementById('kvsaas__cms-typeFilter').value;
+  const specialVal = document.getElementById('kvsaas__cms-specialFilter').value;
+
+  const filtered = containers.filter(c=>{
+    let ok = true;
+    if(searchVal) ok = ok && (c.id === searchVal);
+    if(typeVal !== 'all') ok = ok && (c.type === typeVal);
+    if(specialVal !== 'all') ok = ok && (c.special === specialVal);
+    return ok;
+  });
+
+  renderList(sortByDistance(filtered));
+};
+
+/* ---------------- САЙДБАР ---------------- */
+
+document.getElementById('kvsaas__cms-toggle-sidebar').onclick = ()=>{
+  const listVisible = getComputedStyle(listEl).display !== 'none';
+  if(listVisible){
+    listEl.style.display = 'none';
+    viewedCardEl.style.display = 'none';
+    activeCardEl.style.display = 'none';
+  } else {
+    listEl.style.display = 'block';
+    viewedCardEl.style.display = 'block';
+    activeCardEl.style.display = 'block';
+  }
+};
+
+/* ---------------- СКЛАД ---------------- */
+
+document.getElementById('kvsaas__cms-atWarehouse').onclick = ()=>{
+  alert('Вы отметили своё нахождение на складе');
+};
+
+/* ---------------- ПОКАЗ/СКРЫТИЕ ПАНЕЛИ ---------------- */
+
+function applyStepsVisibility() {
+  const show = document.getElementById('kvsaas__cms-showSteps').checked;
+
+  const panel = document.querySelector('.leaflet-routing-container');
+  const collapse = document.querySelector('.leaflet-routing-collapse');
+
+  if (!panel) return;
+
+  if (show) {
+    panel.style.display = 'block';
+    if (collapse) collapse.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+    if (collapse) collapse.style.display = 'none';
+  }
+}
+
+document.getElementById('kvsaas__cms-showSteps').addEventListener('change', () => {
+  applyStepsVisibility();
+});
+
+/* ---------------- ИНИЦИАЛИЗАЦИЯ ---------------- */
+
+renderList(sortByDistance(containers));
+</script>
+
+</body>
+</html>
