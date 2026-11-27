@@ -3,15 +3,30 @@ import WebKit
 import CoreNFC
 import Vision
 import VisionKit
+import CoreLocation // 261015
 
 // MARK: - 1. Configuration
 struct Config {
     static let prodURL = "https://mapp.kvsaas.de/"
     static let devURL = "https://mdev.kvsaas.de/"
     static let switchYear = 2026
-    static let switchMonth = 4
-    static let switchDay = 12
+    static let switchMonth = 8
+    static let switchDay = 3
     static let storageKey = "user_selected_url"
+}
+// 261015 Class for native request for permission to iOS
+class LocationPermissionHelper: NSObject, CLLocationManagerDelegate {
+    static let shared = LocationPermissionHelper()
+    private let locationManager = CLLocationManager()
+    
+    override init() {
+        super.init()
+        locationManager.delegate = self
+    }
+    
+    func requestPermission() {
+        locationManager.requestWhenInUseAuthorization()
+    }
 }
 
 // MARK: - 2. NFC Service
@@ -70,6 +85,14 @@ struct ModernScannerView: UIViewControllerRepresentable {
     }
 }
 
+// MARK: - Custom WKWebView without accessory bar
+// This subclass disables the inputAccessoryView (the extra bar above the keyboard).
+class NoAccessoryWebView: WKWebView {
+    override var inputAccessoryView: UIView? {
+        return nil
+    }
+}
+
 // MARK: - 4. WebView Container
 struct WebViewContainer: UIViewRepresentable {
     let url: URL
@@ -85,7 +108,10 @@ struct WebViewContainer: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "nfcHandler")
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         
-        let wv = WKWebView(frame: .zero, configuration: config)
+        // 261015 Asking permission in native app for Geoloc
+        LocationPermissionHelper.shared.requestPermission()
+
+        let wv = NoAccessoryWebView(frame: .zero, configuration: config)
         wv.uiDelegate = context.coordinator
         wv.navigationDelegate = context.coordinator
         wv.allowsBackForwardNavigationGestures = true
@@ -121,6 +147,12 @@ struct WebViewContainer: UIViewRepresentable {
     class Coordinator: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
         var p: WebViewContainer
         init(_ p: WebViewContainer) { self.p = p }
+        
+        // 261015
+        @available(iOS 15.0, *)
+                func webView(_ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+                    decisionHandler(.grant)
+                }
         
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             if navigationAction.targetFrame == nil {
@@ -211,7 +243,7 @@ struct ContentView: View {
     static func getInitialURL() -> String {
         if let saved = UserDefaults.standard.string(forKey: Config.storageKey) { return saved }
         let deadline = Calendar.current.date(from: DateComponents(year: Config.switchYear, month: Config.switchMonth, day: Config.switchDay))!
-        return Date() >= deadline ? Config.prodURL : Config.devURL
+        return Config.prodURL //Date() >= deadline ? Config.prodURL : Config.devURL
     }
     
     func updateURL(_ url: String) {
