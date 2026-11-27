@@ -12,8 +12,10 @@ struct Config {
     static let switchYear = 2026
     static let switchMonth = 8
     static let switchDay = 3
-    static let storageKey = "user_selected_url"
+    // 261127 Bumped key version to reset previously cached Dev URL on existing installations
+    static let storageKey = "user_selected_url_v2"
 }
+
 // 261015 Class for native request for permission to iOS
 class LocationPermissionHelper: NSObject, CLLocationManagerDelegate {
     static let shared = LocationPermissionHelper()
@@ -108,7 +110,7 @@ struct WebViewContainer: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "nfcHandler")
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         
-        // 261015 Asking permission in native app for Geoloc
+        // 261015 Asking permission in native app for Geolocation
         LocationPermissionHelper.shared.requestPermission()
 
         let wv = NoAccessoryWebView(frame: .zero, configuration: config)
@@ -121,13 +123,13 @@ struct WebViewContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        // Управление кнопкой назад
+        // Back button handling
         NotificationCenter.default.removeObserver(context.coordinator, name: NSNotification.Name("goBack"), object: nil)
         NotificationCenter.default.addObserver(forName: NSNotification.Name("goBack"), object: nil, queue: .main) { _ in
             if uiView.canGoBack { uiView.goBack() }
         }
         
-        // ПЕРЕДАЧА ДАННЫХ (Исправлено: вызываем JS немедленно)
+        // Data transfer (NFC, Camera, QR) - execute JS immediately
         if !nfc.lastID.isEmpty {
             uiView.evaluateJavaScript("if(window.onNFCRead) onNFCRead('\(nfc.lastID)')")
             let tempID = nfc.lastID; DispatchQueue.main.async { if nfc.lastID == tempID { nfc.lastID = "" } }
@@ -148,15 +150,15 @@ struct WebViewContainer: UIViewRepresentable {
         var p: WebViewContainer
         init(_ p: WebViewContainer) { self.p = p }
         
-        // 261015
+        // 261015 Grant device orientation and motion permissions
         @available(iOS 15.0, *)
-                func webView(_ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-                    decisionHandler(.grant)
-                }
+        func webView(_ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+            decisionHandler(.grant)
+        }
         
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             if navigationAction.targetFrame == nil {
-                // Включаем кнопку возврата для PDF (используем async только для UI-флага)
+                // Enable back button for PDF (use async only for UI state flag)
                 DispatchQueue.main.async { self.p.isPDFActive = true }
                 webView.load(navigationAction.request)
             }
@@ -190,6 +192,8 @@ struct ContentView: View {
                     WebViewContainer(url: url, nfc: nfc, text: $recognizedText, qr: $recognizedQR, isPDFActive: $isPDFActive) {
                         showCamera = true
                     }
+                    // 261127 Force WKWebView recreation when currentUrl changes
+                    .id(currentUrl)
                 }
             }
             .edgesIgnoringSafeArea(.top)
@@ -229,21 +233,26 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
-            UIImpactFeedbackGenerator(style: .heavy).impactOccurred(); showSettings = true
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            showSettings = true
         }
-        .actionSheet(isPresented: $showSettings) {
-            ActionSheet(title: Text("Server Settings"), buttons: [
-                .default(Text("Production")) { updateURL(Config.prodURL) },
-                .default(Text("Development")) { updateURL(Config.devURL) },
-                .cancel()
-            ])
+        // 261127 Replaced deprecated actionSheet with confirmationDialog
+        .confirmationDialog("Server Settings", isPresented: $showSettings, titleVisibility: .visible) {
+            Button("Production") {
+                // 261127 Remove manual override so Production remains the default
+                UserDefaults.standard.removeObject(forKey: Config.storageKey)
+                currentUrl = Config.prodURL
+            }
+            Button("Development") {
+                updateURL(Config.devURL)
+            }
+            Button("Cancel", role: .cancel) { }
         }
     }
     
     static func getInitialURL() -> String {
         if let saved = UserDefaults.standard.string(forKey: Config.storageKey) { return saved }
-        let deadline = Calendar.current.date(from: DateComponents(year: Config.switchYear, month: Config.switchMonth, day: Config.switchDay))!
-        return Config.prodURL //Date() >= deadline ? Config.prodURL : Config.devURL
+        return Config.prodURL
     }
     
     func updateURL(_ url: String) {
@@ -257,6 +266,7 @@ extension NSNotification.Name { static let deviceDidShake = NSNotification.Name(
 extension UIWindow {
     open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake { NotificationCenter.default.post(name: .deviceDidShake, object: nil) }
+        // 261127 Forward motion event up the responder chain
+        super.motionEnded(motion, with: event)
     }
 }
-
